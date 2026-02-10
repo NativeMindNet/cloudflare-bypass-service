@@ -1283,6 +1283,6 @@ jobs:
 
 ## Approval
 
-- [ ] Reviewed by: [name]
-- [ ] Approved on: [date]
-- [ ] Notes: [any conditions or clarifications]
+- [x] Reviewed by: User
+- [x] Approved on: 2026-02-10
+- [x] Notes: Added test URLs (nopecha.com/demo/cloudflare, turnstile.zeroclover.io)
