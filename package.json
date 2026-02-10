@@ -11,13 +11,6 @@
     "test:cloudflare:report": "node tests/cloudflare/report-generator.js",
     "monitor:cloudflare": "node tests/cloudflare/behavior-monitor.js"
   },
-  "jest": {
-    "testMatch": [
-      "**/tests/**/*.test.js"
-    ],
-    "verbose": true,
-    "testTimeout": 120000
-  },
   "keywords": [
     "cloudflare",
     "bypass",
