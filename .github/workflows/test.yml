@@ -1,0 +1,96 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly CF behavior monitoring (Sundays at 2am UTC)
+    - cron: '0 2 * * 0'
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm run test:unit
+        env:
+          SKIP_LAUNCH: 'true'
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run integration tests
+        run: npm run test:integration
+        env:
+          SKIP_LAUNCH: 'true'
+          NODE_ENV: 'development'
+
+  # Weekly Cloudflare behavior monitoring
+  cloudflare-monitor:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install browser dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+
+      - name: Run CF tests
+        run: |
+          xvfb-run --auto-servernum npm run test:cloudflare
+        env:
+          SKIP_CF_TESTS: 'false'
+        continue-on-error: true
+
+      - name: Generate report
+        run: npm run test:cloudflare:report
+        continue-on-error: true
+
+      - name: Upload CF report
+        uses: actions/upload-artifact@v4
+        with:
+          name: cf-behavior-report
+          path: |
+            tests/cloudflare/REPORT.md
+            tests/cloudflare/results.json
+            tests/cloudflare/behavior-history.json
+          retention-days: 90
+
+      - name: Run behavior monitor
+        run: npm run monitor:cloudflare
+        continue-on-error: true

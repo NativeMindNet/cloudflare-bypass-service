@@ -1,0 +1,57 @@
+version: '3.8'
+
+services:
+  cloudflare-bypass:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - PORT=3000
+      - browserLimit=20
+      - timeOut=60000
+      - WARMUP_ENABLED=true
+      - WARMUP_SITES=instagram.com,google.com,x.com
+      - PROXY_WARMUP_ENABLED=true
+      - PROXY_WARMUP_TTL=3600000
+      # Optional: Set authToken for API authentication
+      # - authToken=your-secret-token
+    volumes:
+      # Persist test results
+      - ./tests/cloudflare:/app/tests/cloudflare
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+
+  # Development mode with live reload
+  cloudflare-bypass-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3000"
+    environment:
+      - PORT=3000
+      - NODE_ENV=development
+      - WARMUP_ENABLED=true
+      - PROXY_WARMUP_ENABLED=true
+    volumes:
+      - ./src:/app/src
+      - ./tests:/app/tests
+    command: ["node", "--watch", "src/index.js"]
+    profiles:
+      - dev
+
+  # Test runner
+  test-runner:
+    build: .
+    environment:
+      - NODE_ENV=test
+      - SKIP_LAUNCH=true
+      - SKIP_CF_TESTS=true
+    command: ["npm", "test"]
+    profiles:
+      - test
