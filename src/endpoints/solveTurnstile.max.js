@@ -1,5 +1,7 @@
 const fs = require("fs");
-function solveTurnstileMin({ url, proxy }) {
+const { warmupProxyContext } = require('../module/warmupProxy');
+
+function solveTurnstileMax({ url, proxy }) {
   return new Promise(async (resolve, reject) => {
     if (!url) return reject("Missing url parameter");
 
@@ -28,7 +30,12 @@ function solveTurnstileMin({ url, proxy }) {
           username: proxy.username,
           password: proxy.password,
         });
-        
+
+      // Warmup proxy context before navigating to target
+      if (proxy) {
+        await warmupProxyContext(page, proxy);
+      }
+
       await page.evaluateOnNewDocument(() => {
         let token = null;
         async function waitForToken() {
@@ -77,4 +84,4 @@ function solveTurnstileMin({ url, proxy }) {
     }
   });
 }
-module.exports = solveTurnstileMin;
+module.exports = solveTurnstileMax;

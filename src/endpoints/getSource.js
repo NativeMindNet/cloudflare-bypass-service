@@ -1,3 +1,5 @@
+const { warmupProxyContext } = require('../module/warmupProxy');
+
 function getSource({ url, proxy }) {
   return new Promise(async (resolve, reject) => {
     if (!url) return reject("Missing url parameter");
@@ -25,6 +27,11 @@ function getSource({ url, proxy }) {
           username: proxy.username,
           password: proxy.password,
         });
+
+      // Warmup proxy context before navigating to target
+      if (proxy) {
+        await warmupProxyContext(page, proxy);
+      }
 
       await page.setRequestInterception(true);
       page.on("request", async (request) => request.continue());

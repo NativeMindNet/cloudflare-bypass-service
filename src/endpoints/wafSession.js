@@ -1,3 +1,5 @@
+const { warmupProxyContext } = require('../module/warmupProxy');
+
 async function findAcceptLanguage(page) {
   return await page.evaluate(async () => {
     const result = await fetch("https://httpbin.org/get")
@@ -11,7 +13,7 @@ async function findAcceptLanguage(page) {
   });
 }
 
-function getSource({ url, proxy }) {
+function wafSession({ url, proxy }) {
   return new Promise(async (resolve, reject) => {
     if (!url) return reject("Missing url parameter");
     const context = await global.browser
@@ -38,6 +40,12 @@ function getSource({ url, proxy }) {
           username: proxy.username,
           password: proxy.password,
         });
+
+      // Warmup proxy context before navigating to target
+      if (proxy) {
+        await warmupProxyContext(page, proxy);
+      }
+
       let acceptLanguage = await findAcceptLanguage(page);
       await page.setRequestInterception(true);
       page.on("request", async (request) => request.continue());
@@ -77,4 +85,4 @@ function getSource({ url, proxy }) {
     }
   });
 }
-module.exports = getSource;
+module.exports = wafSession;

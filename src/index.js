@@ -25,7 +25,15 @@ const getSource = require('./endpoints/getSource')
 const solveTurnstileMin = require('./endpoints/solveTurnstile.min')
 const solveTurnstileMax = require('./endpoints/solveTurnstile.max')
 const wafSession = require('./endpoints/wafSession')
+const healthCheck = require('./endpoints/health')
+const testReport = require('./endpoints/testReport')
 
+
+// Health check endpoint
+app.get('/health', healthCheck)
+
+// Test report endpoint
+app.get('/test-report', testReport)
 
 app.post('/cf-clearance-scraper', async (req, res) => {
 
