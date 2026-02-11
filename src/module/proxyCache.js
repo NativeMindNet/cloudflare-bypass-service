@@ -139,7 +139,8 @@ class ProxyCache {
 // Singleton instance
 const proxyCache = new ProxyCache();
 
-// Cleanup every 10 minutes
-setInterval(() => proxyCache.cleanup(), 600000);
+// Cleanup every 10 minutes (unref to not block process exit)
+const cleanupInterval = setInterval(() => proxyCache.cleanup(), 600000);
+cleanupInterval.unref();
 
 module.exports = proxyCache;

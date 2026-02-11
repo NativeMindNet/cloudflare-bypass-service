@@ -17,3 +17,9 @@ global.browserWarmedUp = false;
 
 // Increase timeout for integration tests
 jest.setTimeout(120000);
+
+// Force Jest to exit after tests complete (handles lingering timers)
+afterAll(() => {
+  // Allow any pending promises to settle
+  return new Promise(resolve => setTimeout(resolve, 100));
+});

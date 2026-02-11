@@ -6,7 +6,7 @@
     "start": "node src/index.js",
     "test": "node --experimental-vm-modules ./node_modules/.bin/jest --detectOpenHandles --verbose",
     "test:unit": "jest tests/unit --verbose",
-    "test:integration": "jest tests/integration --verbose --runInBand",
+    "test:integration": "jest tests/integration --verbose --runInBand --forceExit",
     "test:cloudflare": "jest tests/cloudflare --verbose --runInBand",
     "test:cloudflare:report": "node tests/cloudflare/report-generator.js",
     "monitor:cloudflare": "node tests/cloudflare/behavior-monitor.js"

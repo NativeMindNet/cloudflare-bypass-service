@@ -89,14 +89,24 @@ describe('API Endpoints', () => {
     });
 
     test('returns 500 when browser not ready', async () => {
+      // Save original value and temporarily disable SKIP_LAUNCH check bypass
+      const originalSkipLaunch = process.env.SKIP_LAUNCH;
+      process.env.SKIP_LAUNCH = 'false';
       global.browser = null;
 
-      const res = await request(app)
+      // Need to reload the module to pick up env change
+      jest.resetModules();
+      const freshApp = require('../../src/index');
+
+      const res = await request(freshApp)
         .post('/cf-clearance-scraper')
         .send({ url: 'https://example.com', mode: 'source' });
 
       expect(res.status).toBe(500);
       expect(res.body.message).toContain('not ready');
+
+      // Restore
+      process.env.SKIP_LAUNCH = originalSkipLaunch;
     });
 
     test('returns 429 when at browser limit', async () => {
