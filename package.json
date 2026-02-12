@@ -4,7 +4,7 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "test": "node --experimental-vm-modules ./node_modules/.bin/jest --detectOpenHandles --verbose",
+    "test": "jest --detectOpenHandles --verbose --forceExit",
     "test:unit": "jest tests/unit --verbose",
     "test:integration": "jest tests/integration --verbose --runInBand --forceExit",
     "test:cloudflare": "jest tests/cloudflare --verbose --runInBand",
