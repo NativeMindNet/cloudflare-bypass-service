@@ -1,23 +1,21 @@
-version: '3.8'
-
 services:
   cloudflare-bypass:
     build: .
-    ports:
-      - "3000:3000"
+    image: cloudflare-bypass:${ENV_TAG:-latest}
     environment:
       - PORT=3000
-      - browserLimit=20
-      - timeOut=60000
-      - WARMUP_ENABLED=true
-      - WARMUP_SITES=instagram.com,google.com,x.com
-      - PROXY_WARMUP_ENABLED=true
-      - PROXY_WARMUP_TTL=3600000
-      # Optional: Set authToken for API authentication
-      # - authToken=your-secret-token
+      - browserLimit=${BROWSER_LIMIT:-20}
+      - timeOut=${TIMEOUT:-60000}
+      - WARMUP_ENABLED=${WARMUP_ENABLED:-true}
+      - WARMUP_SITES=${WARMUP_SITES:-instagram.com,google.com,x.com}
+      - PROXY_WARMUP_ENABLED=${PROXY_WARMUP_ENABLED:-true}
+      - PROXY_WARMUP_TTL=${PROXY_WARMUP_TTL:-3600000}
+      - authToken=${AUTH_TOKEN:-}
     volumes:
-      # Persist test results
       - ./tests/cloudflare:/app/tests/cloudflare
+    networks:
+      cf_network:
+        ipv4_address: ${CONTAINER_IP}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 30s
@@ -26,13 +24,13 @@ services:
       start_period: 60s
     restart: unless-stopped
 
-  # Development mode with live reload
+  # Development mode with live reload - not deployed via CI/CD
   cloudflare-bypass-dev:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "3001:3000"
+      - "${DEV_PORT:-3001}:3000"
     environment:
       - PORT=3000
       - NODE_ENV=development
@@ -45,7 +43,7 @@ services:
     profiles:
       - dev
 
-  # Test runner
+  # Test runner - not deployed via CI/CD
   test-runner:
     build: .
     environment:
@@ -55,3 +53,13 @@ services:
     command: ["npm", "test"]
     profiles:
       - test
+
+networks:
+  cf_network:
+    driver: macvlan
+    driver_opts:
+      parent: ${NETWORK_PARENT:-eth0}
+    ipam:
+      config:
+        - subnet: ${NETWORK_SUBNET}
+          gateway: ${NETWORK_GATEWAY}

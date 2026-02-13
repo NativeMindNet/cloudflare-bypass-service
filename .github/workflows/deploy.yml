@@ -1,0 +1,77 @@
+name: Deploy
+
+on:
+  push:
+    branches: [prod, dev, stage]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy'
+        required: true
+        type: choice
+        options: [prod, dev, stage]
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, "${{ github.event_name == 'workflow_dispatch' && inputs.environment || github.ref_name }}"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate environment
+        run: |
+          if [ -z "${DEPLOY_DIR}" ]; then
+            echo "::error::DEPLOY_DIR not set in runner environment"
+            exit 1
+          fi
+          echo "DEPLOY_DIR=${DEPLOY_DIR}"
+
+      - name: Deploy
+        run: |
+          ENV_NAME="${{ github.event_name == 'workflow_dispatch' && inputs.environment || github.ref_name }}"
+          TARGET_DIR="${DEPLOY_DIR}/${ENV_NAME}"
+
+          # Verify .env exists
+          if [ ! -f "${TARGET_DIR}/.env" ]; then
+            echo "::error::.env not found in ${TARGET_DIR}"
+            exit 1
+          fi
+
+          # Copy repo files (preserve existing .env and docker-compose.override.yml)
+          cp docker-compose.yml "${TARGET_DIR}/"
+          cp Dockerfile "${TARGET_DIR}/"
+          cp package*.json "${TARGET_DIR}/"
+          cp -r src/ "${TARGET_DIR}/"
+          [ -f .env.example ] && cp .env.example "${TARGET_DIR}/"
+
+          # Build and restart
+          cd "${TARGET_DIR}"
+          docker-compose build
+          docker-compose down
+          docker-compose up -d
+
+      - name: Health check
+        run: |
+          ENV_NAME="${{ github.event_name == 'workflow_dispatch' && inputs.environment || github.ref_name }}"
+          TARGET_DIR="${DEPLOY_DIR}/${ENV_NAME}"
+
+          sleep 15
+
+          # Load env vars for health check
+          set -a
+          # shellcheck source=/dev/null
+          source "${TARGET_DIR}/.env"
+          set +a
+          HEALTH_URL="http://${CONTAINER_IP}:3000/health"
+
+          echo "Checking health at ${HEALTH_URL}"
+          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "${HEALTH_URL}" || echo "000")
+
+          if [ "$HTTP_CODE" = "200" ]; then
+            echo "Health check passed"
+          else
+            echo "::warning::Health check returned ${HTTP_CODE}"
+          fi
+
+          # Show container status
+          docker-compose -f "${TARGET_DIR}/docker-compose.yml" --project-directory "${TARGET_DIR}" ps

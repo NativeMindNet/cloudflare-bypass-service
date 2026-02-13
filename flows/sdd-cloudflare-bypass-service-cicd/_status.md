@@ -2,11 +2,11 @@
 
 ## Current Phase
 
-SPECIFICATIONS
+IMPLEMENTATION
 
 ## Phase Status
 
-DRAFTED
+COMPLETE (implementation done; verify on runner)
 
 ## Last Updated
 
@@ -21,11 +21,11 @@ DRAFTED
 - [x] Requirements drafted
 - [x] Requirements approved
 - [x] Specifications drafted
-- [ ] Specifications approved
+- [x] Specifications approved
 - [x] Plan drafted
-- [ ] Plan approved
-- [ ] Implementation started
-- [ ] Implementation complete
+- [x] Plan approved
+- [x] Implementation started
+- [x] Implementation complete
 
 ## Context Notes
 
@@ -48,8 +48,6 @@ Refactored from tor-socks-proxy-service CI/CD template
 
 ## Next Actions
 
-1. Review specifications (02-specifications.md)
-2. Получить approval на specifications
-3. Review plan (03-plan.md)
-4. Получить approval на plan
-5. Начать implementation
+1. On each runner: create deploy dirs, copy .env.example → .env, set NETWORK_* and CONTAINER_IP
+2. On macOS runners: add docker-compose.override.yml with driver: bridge
+3. Push to dev/stage/prod (or use workflow_dispatch) to verify deploy
