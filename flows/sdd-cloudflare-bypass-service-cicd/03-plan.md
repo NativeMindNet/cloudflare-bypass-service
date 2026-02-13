@@ -7,18 +7,18 @@
 
 ## Summary
 
-Реализация CI/CD для автодеплоя cloudflare-bypass-service на prod/dev/stage инстансы. Три основных deliverable: параметризованный docker-compose.yml, .env.example, и GitHub Actions workflow.
+Реализация CI/CD для автодеплоя cloudflare-bypass-service на prod/dev/stage инстансы. Контейнер получает отдельный IP (Linux: macvlan в подсети роутера; macOS: bridge через override). Deliverable: параметризованный docker-compose.yml (сеть, без port mapping), .env.example, deploy.yml.
 
 ## Task Breakdown
 
 ### Phase 1: Docker Compose Parameterization
 
-#### Task 1.1: Параметризация портов и IP
-- **Description**: Заменить хардкод портов на переменные окружения с defaults
+#### Task 1.1: Сеть с отдельным IP (macvlan на Linux, bridge на macOS через override)
+- **Description**: Убрать привязку портов к хосту; подключить сервис к сети с фиксированным IP контейнера (CONTAINER_IP). На Linux — macvlan (отдельный интерфейс в подсети роутера), порт на хост не мапится — нет конфликтов с другими проектами.
 - **Files**:
   - `docker-compose.yml` - Modify
 - **Dependencies**: None
-- **Verification**: `docker-compose config` показывает переменные; запуск без .env использует defaults
+- **Verification**: `docker-compose config` показывает сеть cf_network (macvlan), ipv4_address; портов на хосте нет
 - **Complexity**: Low
 
 **Changes:**
@@ -27,9 +27,11 @@
 ports:
   - "3000:3000"
 
-# After
-ports:
-  - "${BIND_IP:-0.0.0.0}:${PORT:-3000}:3000"
+# After — портов нет; контейнер получает CONTAINER_IP в сети
+networks:
+  cf_network:
+    ipv4_address: ${CONTAINER_IP}
+# + секция networks: driver macvlan, parent ${NETWORK_PARENT}, subnet, gateway
 ```
 
 #### Task 1.2: Параметризация image tags
@@ -69,15 +71,11 @@ image: cloudflare-bypass:${ENV_TAG:-latest}
 - **Complexity**: Low
 
 **Content:**
-- COMPOSE_PROJECT_NAME
-- ENV_TAG
-- BIND_IP
+- COMPOSE_PROJECT_NAME, ENV_TAG
+- NETWORK_SUBNET, NETWORK_GATEWAY, NETWORK_PARENT, CONTAINER_IP (Linux: подсеть роутера; macOS: своя подсеть, override с bridge)
 - PORT, DEV_PORT
-- BROWSER_LIMIT, TIMEOUT
-- WARMUP_ENABLED, WARMUP_SITES
-- PROXY_WARMUP_ENABLED, PROXY_WARMUP_TTL
-- AUTH_TOKEN
-- Примеры для prod/dev/stage
+- BROWSER_LIMIT, TIMEOUT, WARMUP_*, PROXY_WARMUP_*, AUTH_TOKEN
+- Примеры для Linux (macvlan) и macOS (bridge)
 
 #### Task 2.2: Обновление .gitignore
 - **Description**: Добавить .env в .gitignore (если не добавлен)
@@ -155,7 +153,7 @@ Phase 1 (Docker Compose)          Phase 2 (Env)         Phase 3 (Workflow)
 ========================          =============         ==================
 
 Task 1.1 ─────┬─────────────────→ Task 2.1              Task 3.1
-(ports/IP)    │                   (.env.example)           │
+(network/IP)  │                   (.env.example)           │
               │                        │                   ▼
 Task 1.2 ─────┤                        │              Task 3.2
 (image tags)  │                        │              (validation)
@@ -179,8 +177,8 @@ Task 1.3 ─────┘                        │                   ▼
 
 | File | Action | Reason |
 |------|--------|--------|
-| `docker-compose.yml` | Modify | Параметризация (IP, ports, tags, env vars) |
-| `.env.example` | Create | Шаблон конфигурации |
+| `docker-compose.yml` | Modify | Сеть macvlan + CONTAINER_IP, параметризация тегов и env vars; порты не мапятся |
+| `.env.example` | Create | Шаблон (NETWORK_*, CONTAINER_IP, ENV_TAG, PORT, warmup, AUTH_TOKEN) |
 | `.github/workflows/deploy.yml` | Create | CI/CD workflow |
 | `.gitignore` | Modify | Исключить .env |
 
@@ -203,8 +201,8 @@ Task 1.3 ─────┘                        │                   ▼
 ## Checkpoints
 
 ### После Phase 1:
-- [ ] `docker-compose config` без ошибок
-- [ ] Все переменные имеют defaults
+- [ ] `docker-compose config` без ошибок; сеть cf_network (macvlan), ipv4_address
+- [ ] Порт на хост не мапится; переменные NETWORK_*, CONTAINER_IP
 
 ### После Phase 2:
 - [ ] `.env.example` содержит все переменные

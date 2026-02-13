@@ -36,11 +36,11 @@ Key decisions and context for resuming:
 - Self-hosted GitHub Runner на каждом инстансе
 - Один контейнер (cloudflare-bypass) с Node.js + Puppeteer + Chromium
 - **Multi-platform:** Linux (Ubuntu) + macOS
-  - Linux: `/opt/cf-bypass/`, real IPs (10.0.0.x)
-  - macOS: `~/cf-bypass/`, loopback aliases (127.0.0.2, 127.0.0.3) или host IPs
-- Параметризация через .env (PORT, BIND_IP, ENV_TAG, BROWSER_LIMIT, etc.)
+  - Linux: `/opt/cf-bypass/`, **macvlan** — отдельный интерфейс, IP в подсети роутера (CONTAINER_IP)
+  - macOS: `~/cf-bypass/`, **bridge** (macvlan не поддерживается) — своя подсеть, статический IP
+- Параметризация через .env (NETWORK_SUBNET, NETWORK_GATEWAY, NETWORK_PARENT, CONTAINER_IP, ENV_TAG, etc.)
 - test.yml остаётся отдельным — деплой не зависит от тестов
-- IP-адреса указываются вручную в .env на каждом сервере
+- Порт на хост не мапится — нет конфликтов с другими проектами в Docker
 
 ## Fork History
 

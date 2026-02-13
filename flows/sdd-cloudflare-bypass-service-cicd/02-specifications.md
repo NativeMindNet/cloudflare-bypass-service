@@ -21,18 +21,28 @@ CI/CD система для автоматического деплоя cloudfla
 
 | Platform | Docker | Paths | Network | Use Case |
 |----------|--------|-------|---------|----------|
-| Linux/Ubuntu | Docker Engine | `/opt/cf-bypass/` | macvlan (container IP) | prod, dev |
-| macOS | Docker Desktop | `~/cf-bypass/` | macvlan (container IP) | stage, dev |
+| Linux/Ubuntu | Docker Engine | `/opt/cf-bypass/` | **macvlan** — отдельный интерфейс, IP в подсети роутера | prod, dev |
+| macOS | Docker Desktop | `~/cf-bypass/` | **bridge** — своя подсеть, статический IP (macvlan не поддерживается) | stage, dev |
 
-### Network Isolation via Docker macvlan
+### Отдельный интерфейс и IP от роутера (Linux)
 
-Каждый контейнер получает отдельный IP в сети через macvlan driver. Не требуются системные IP aliases.
+На **Linux** контейнер получает отдельный сетевой интерфейс через драйвер **macvlan**: интерфейс привязан к физическому интерфейсу хоста (например `eth0`), роутер видит контейнер как отдельное устройство в сети. Порт на хост не мапится — нет конфликтов с другими проектами в Docker.
 
-**Преимущества:**
-- Контейнер имеет собственный IP в физической сети
-- Нет port mapping на хост - порт 3000 на уникальном IP
-- Полная изоляция между environments
-- Работает на Linux и macOS
+**Варианты получения IP:**
+
+1. **Статический IP в подсети роутера (рекомендуется)**  
+   В `.env` задаёте `NETWORK_SUBNET`, `NETWORK_GATEWAY`, `NETWORK_PARENT` (интерфейс хоста) и `CONTAINER_IP` — свободный IP из подсети роутера. В роутере можно зарезервировать этот IP за MAC контейнера (DHCP reservation), чтобы не пересекаться с раздачей DHCP.
+
+2. **Динамический IP от роутера (DHCP)**  
+   Docker macvlan не умеет выдавать контейнеру IP по DHCP «из коробки». Возможные варианты:
+   - **Резервация в роутере:** задать статический `CONTAINER_IP` в подсети и в настройках роутера привязать его к MAC-адресу контейнера (по сути «динамический» с точки зрения роутера — он выдаёт этот IP данному устройству).
+   - **DHCP внутри контейнера:** после старта контейнера запускать в нём `dhclient` на macvlan-интерфейсе — тогда роутер выдаст IP по DHCP. Требует доработки образа/entrypoint и передачи имени интерфейса.
+
+Для CI/CD и предсказуемого health check достаточно **статического IP в подсети роутера** (вариант 1).
+
+### macOS: bridge (macvlan недоступен)
+
+**macvlan на Docker Desktop для Mac не поддерживается.** На macOS используется пользовательская **bridge**-сеть с фиксированной подсетью и статическим IP контейнера. Порт на хост не публикуется — доступ с хоста по `CONTAINER_IP:3000`, конфликтов с другими контейнерами нет.
 
 ### Configuration per Platform
 
@@ -48,40 +58,41 @@ export DEPLOY_DIR=/opt/cf-bypass
 export DEPLOY_DIR=~/cf-bypass
 ```
 
-### Example .env with macvlan
+### Example .env
 
-**Linux Production:**
+**Linux (macvlan, IP в подсети роутера):**
 ```bash
 COMPOSE_PROJECT_NAME=cf-bypass-prod
 ENV_TAG=prod
 
-# macvlan network settings
-NETWORK_SUBNET=10.0.0.0/24
-NETWORK_GATEWAY=10.0.0.1
+# macvlan: подсеть и шлюз как у роутера, родительский интерфейс хоста
+NETWORK_SUBNET=192.168.1.0/24
+NETWORK_GATEWAY=192.168.1.1
 NETWORK_PARENT=eth0
-CONTAINER_IP=10.0.0.10
+CONTAINER_IP=192.168.1.50
 ```
 
-**Linux Development:**
+**Linux Development (второй контейнер на том же хосте):**
 ```bash
 COMPOSE_PROJECT_NAME=cf-bypass-dev
 ENV_TAG=dev
 
-NETWORK_SUBNET=10.0.0.0/24
-NETWORK_GATEWAY=10.0.0.1
+NETWORK_SUBNET=192.168.1.0/24
+NETWORK_GATEWAY=192.168.1.1
 NETWORK_PARENT=eth0
-CONTAINER_IP=10.0.0.11
+CONTAINER_IP=192.168.1.51
 ```
 
-**macOS Stage:**
+**macOS (bridge, своя подсеть):**
 ```bash
 COMPOSE_PROJECT_NAME=cf-bypass-stage
 ENV_TAG=stage
 
-NETWORK_SUBNET=192.168.1.0/24
-NETWORK_GATEWAY=192.168.1.1
-NETWORK_PARENT=en0
-CONTAINER_IP=192.168.1.50
+# bridge: любая приватная подсеть, не пересекающаяся с хостом
+NETWORK_SUBNET=172.28.0.0/24
+NETWORK_GATEWAY=172.28.0.1
+CONTAINER_IP=172.28.0.2
+# NETWORK_PARENT на macOS не используется (driver: bridge)
 ```
 
 ## Affected Systems
@@ -333,8 +344,9 @@ networks:
 
 **Note:**
 - CI/CD деплоит только основной сервис `cloudflare-bypass`
-- Контейнер получает отдельный IP через macvlan (CONTAINER_IP)
-- Порт 3000 доступен напрямую по CONTAINER_IP без port mapping
+- Контейнер получает отдельный IP (macvlan на Linux, bridge на macOS); порт на хост не мапится
+- Health check и доступ к сервису: `http://${CONTAINER_IP}:3000`
+- **macOS:** macvlan не поддерживается — в каталоге деплоя нужен `docker-compose.override.yml`, подменяющий сеть на `driver: bridge` и убирающий `driver_opts.parent`
 - Профили `dev` и `test` используются локально
 
 ## Data Models
@@ -354,9 +366,14 @@ COMPOSE_PROJECT_NAME=cf-bypass-dev
 # Environment tag for Docker images
 ENV_TAG=dev
 
-# --- Network Binding ---
-# IP address to bind services (use specific IP for multi-env on same server)
-BIND_IP=0.0.0.0
+# --- Network (Linux: macvlan, macOS: bridge) ---
+# Подсеть и шлюз: на Linux — как у роутера; на macOS — любая приватная (e.g. 172.28.0.0/24)
+NETWORK_SUBNET=192.168.1.0/24
+NETWORK_GATEWAY=192.168.1.1
+# Родительский интерфейс (только Linux, macvlan). macOS: оставить пустым и использовать override с driver: bridge
+NETWORK_PARENT=eth0
+# IP контейнера в этой подсети (на Linux — из диапазона роутера, можно зарезервировать в DHCP)
+CONTAINER_IP=192.168.1.50
 
 # --- Ports ---
 PORT=3000
@@ -383,21 +400,20 @@ AUTH_TOKEN=
 # Example configurations:
 # ===========================================
 #
-# Production (IP: 10.0.0.1):
-#   COMPOSE_PROJECT_NAME=cf-bypass-prod
-#   ENV_TAG=prod
-#   BIND_IP=10.0.0.1
-#   AUTH_TOKEN=your-secure-token
+# Linux prod (macvlan, IP от подсети роутера):
+#   NETWORK_SUBNET=192.168.1.0/24
+#   NETWORK_GATEWAY=192.168.1.1
+#   NETWORK_PARENT=eth0
+#   CONTAINER_IP=192.168.1.50
 #
-# Development (IP: 10.0.0.2):
-#   COMPOSE_PROJECT_NAME=cf-bypass-dev
-#   ENV_TAG=dev
-#   BIND_IP=10.0.0.2
+# Linux dev (второй контейнер на том же хосте):
+#   CONTAINER_IP=192.168.1.51
 #
-# Stage (localhost):
-#   COMPOSE_PROJECT_NAME=cf-bypass-stage
-#   ENV_TAG=stage
-#   BIND_IP=127.0.0.1
+# macOS (bridge, своя подсеть):
+#   NETWORK_SUBNET=172.28.0.0/24
+#   NETWORK_GATEWAY=172.28.0.1
+#   CONTAINER_IP=172.28.0.2
+#   NETWORK_PARENT=  (пусто; использовать override с driver: bridge)
 ```
 
 ### Directory Structure on Server
@@ -406,7 +422,7 @@ AUTH_TOKEN=
 ```
 /opt/cf-bypass/
 ├── prod/
-│   ├── .env                         # Production config (BIND_IP=10.0.0.1)
+│   ├── .env                         # Production config (CONTAINER_IP, NETWORK_*)
 │   ├── docker-compose.yml           # From repo (updated on deploy)
 │   ├── docker-compose.override.yml  # Local overrides (persistent)
 │   ├── Dockerfile                   # From repo
@@ -423,7 +439,7 @@ AUTH_TOKEN=
 ```
 ~/cf-bypass/
 ├── stage/
-│   ├── .env                         # Stage config (BIND_IP=127.0.0.1)
+│   ├── .env                         # Stage config (CONTAINER_IP, NETWORK_*)
 │   ├── docker-compose.yml
 │   ├── docker-compose.override.yml
 │   ├── Dockerfile
@@ -514,10 +530,10 @@ AUTH_TOKEN=
 docker ps --format "table {{.Names}}\t{{.Image}}\t{{.Ports}}"
 
 # Verify env is loaded
-docker-compose config | grep BIND_IP
+docker-compose config | grep -E "CONTAINER_IP|subnet"
 
-# Test health endpoint
-curl http://localhost:3000/health | jq
+# Test health endpoint (use CONTAINER_IP from .env)
+source .env && curl -s "http://${CONTAINER_IP}:3000/health" | jq
 
 # Check logs
 docker-compose logs -f cloudflare-bypass
@@ -548,55 +564,40 @@ docker-compose logs -f cloudflare-bypass
 2. Install and register GitHub Runner with label (e.g., `stage`)
 3. Set `DEPLOY_DIR` in runner environment:
    ```bash
-   # Add to ~/.zshrc
    export DEPLOY_DIR=~/cf-bypass
    ```
-4. Create loopback aliases for network isolation:
-   ```bash
-   # One-time (lost on reboot)
-   sudo ifconfig lo0 alias 127.0.0.2 up  # stage
-   sudo ifconfig lo0 alias 127.0.0.3 up  # dev
-
-   # Persistent: create LaunchDaemon (see below)
-   ```
-5. Create directory structure:
+4. Create directory structure:
    ```bash
    mkdir -p ~/cf-bypass/{stage,dev}
    ```
-6. Copy `.env.example` to `.env` and configure with unique BIND_IP per environment
-7. First deploy will copy all files and build images
-
-**Persistent loopback aliases (LaunchDaemon):**
-```bash
-# /Library/LaunchDaemons/com.local.loopback-aliases.plist
-sudo tee /Library/LaunchDaemons/com.local.loopback-aliases.plist << 'EOF'
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-    <key>Label</key>
-    <string>com.local.loopback-aliases</string>
-    <key>ProgramArguments</key>
-    <array>
-        <string>/bin/sh</string>
-        <string>-c</string>
-        <string>ifconfig lo0 alias 127.0.0.2 up; ifconfig lo0 alias 127.0.0.3 up</string>
-    </array>
-    <key>RunAtLoad</key>
-    <true/>
-</dict>
-</plist>
-EOF
-sudo launchctl load /Library/LaunchDaemons/com.local.loopback-aliases.plist
-```
+5. Copy `.env.example` to `.env` и задать **bridge**-переменные (подсеть, не пересекающаяся с хостом):
+   ```bash
+   NETWORK_SUBNET=172.28.0.0/24
+   NETWORK_GATEWAY=172.28.0.1
+   CONTAINER_IP=172.28.0.2
+   # NETWORK_PARENT оставить пустым
+   ```
+6. Создать `docker-compose.override.yml` в каталоге деплоя, чтобы подменить сеть на bridge (macvlan на macOS недоступен):
+   ```yaml
+   networks:
+     cf_network:
+       driver: bridge
+       driver_opts: {}
+       ipam:
+         config:
+           - subnet: ${NETWORK_SUBNET}
+             gateway: ${NETWORK_GATEWAY}
+   ```
+7. First deploy скопирует файлы и соберёт образы
 
 ### Existing Server Migration
 
 1. Stop current containers: `docker-compose down`
 2. Move existing files to deploy directory
 3. Create `.env` from `.env.example`
-4. Configure `BIND_IP`, `ENV_TAG`, etc.
-5. Test: `docker-compose up -d`
+4. Configure `NETWORK_SUBNET`, `NETWORK_GATEWAY`, `NETWORK_PARENT` (Linux), `CONTAINER_IP`, `ENV_TAG`
+5. On macOS: add `docker-compose.override.yml` for bridge network (see above)
+6. Test: `docker-compose up -d`
 
 ## Open Design Questions
 
